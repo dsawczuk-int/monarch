@@ -113,6 +113,11 @@ The project uses PyTorch from specific indices (see `pyproject.toml`). Default i
 uv sync --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
+For Intel XPU PyTorch wheels, build with tensor_engine disabled:
+```bash
+USE_TENSOR_ENGINE=0 uv sync --extra-index-url https://download.pytorch.org/whl/xpu
+```
+
 ### Meta Internal Build (Buck2)
 
 For Meta internal development:

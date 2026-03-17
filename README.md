@@ -105,6 +105,12 @@ brew install uv
   uv sync --extra-index-url https://download.pytorch.org/whl/cu126
   ```
 
+For Intel XPU PyTorch wheels, use the XPU index and disable tensor engine:
+
+```sh
+USE_TENSOR_ENGINE=0 uv sync --extra-index-url https://download.pytorch.org/whl/xpu
+```
+
 #### Understanding Tensor Engine
 
 Monarch includes
