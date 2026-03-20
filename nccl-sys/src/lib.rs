@@ -9,7 +9,7 @@
 use cxx::ExternType;
 use cxx::type_id;
 
-#[cfg(not(use_rocm))]
+#[cfg(not(any(use_rocm, use_xpu)))]
 mod extern_types {
     use super::*;
 
@@ -45,6 +45,26 @@ mod extern_types {
         type Kind = cxx::kind::Opaque;
     }
 }
+// TODO CHECK WHERE IT IS NEEDED
+// #[cfg(use_xpu)]
+// mod extern_types {
+//     use super::inner::ncclComm;
+//     use super::inner::xpuStreamOpaque;
+//     use super::*;
+
+//     /// SAFETY: bindings
+//     /// Note: XPU uses xpuStreamOpaque as the opaque type behind xpuStream_t pointer
+//     unsafe impl ExternType for xpuStreamOpaque {
+//         type Id = type_id!("xpuStreamOpaque");
+//         type Kind = cxx::kind::Opaque;
+//     }
+
+//     /// SAFETY: bindings
+//     unsafe impl ExternType for ncclComm {
+//         type Id = type_id!("ncclComm");
+//         type Kind = cxx::kind::Opaque;
+//     }
+// }
 
 // When building with cargo, this is actually the lib.rs file for a crate.
 // Include the generated bindings.rs and suppress lints.
@@ -62,6 +82,12 @@ mod inner {
 
     // This type is manually defined instead of generated because we want to derive
     // Serialize/Deserialize on it.
+    // oneCCL unique IDs are 4096 bytes; NCCL/RCCL unique IDs are 128 bytes.
+    #[cfg(use_xpu)]
+    pub const NCCL_UNIQUE_ID_BYTES: usize = 4096;
+    #[cfg(not(use_xpu))]
+    pub const NCCL_UNIQUE_ID_BYTES: usize = 128;
+
     #[repr(C)]
     #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
     pub struct ncclUniqueId {
@@ -71,27 +97,33 @@ mod inner {
             serialize_with = "serialize_array",
             deserialize_with = "deserialize_array"
         )]
-        pub internal: [::std::os::raw::c_char; 128usize],
+        pub internal: [::std::os::raw::c_char; NCCL_UNIQUE_ID_BYTES],
     }
 
-    fn deserialize_array<'de, D>(deserializer: D) -> Result<[::std::os::raw::c_char; 128], D::Error>
+    fn deserialize_array<'de, D>(
+        deserializer: D,
+    ) -> Result<[::std::os::raw::c_char; NCCL_UNIQUE_ID_BYTES], D::Error>
     where
         D: Deserializer<'de>,
     {
         let vec: Vec<::std::os::raw::c_char> = Deserialize::deserialize(deserializer)?;
         vec.try_into().map_err(|v: Vec<::std::os::raw::c_char>| {
-            serde::de::Error::invalid_length(v.len(), &"expected an array of length 128")
+            serde::de::Error::custom(format_args!(
+                "expected an array of length {}, got {}",
+                NCCL_UNIQUE_ID_BYTES,
+                v.len()
+            ))
         })
     }
 
     fn serialize_array<S>(
-        array: &[::std::os::raw::c_char; 128],
+        array: &[::std::os::raw::c_char; NCCL_UNIQUE_ID_BYTES],
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(128))?;
+        let mut seq = serializer.serialize_seq(Some(NCCL_UNIQUE_ID_BYTES))?;
         for element in array {
             seq.serialize_element(element)?;
         }
@@ -99,7 +131,7 @@ mod inner {
     }
 }
 
-// Export all inner bindings for both CUDA and ROCm builds
+// Export all inner bindings for CUDA, ROCm, and XPU builds
 pub use inner::*;
 
 // For ROCm: also export compatibility aliases that map CUDA names to HIP
@@ -123,6 +155,29 @@ mod rocm_compat {
     pub use inner::hipSetDevice as cudaSetDevice;
     pub use inner::hipStreamSynchronize as cudaStreamSynchronize;
 }
+
+// TODO CHECK WHERE IT IS NEEDED
+// // For XPU: export compatibility aliases that map CUDA names to XPU equivalents
+// #[cfg(use_xpu)]
+// pub use self::xpu_compat::*;
+
+// #[cfg(use_xpu)]
+// #[allow(non_camel_case_types)]
+// mod xpu_compat {
+//     use super::inner;
+
+//     // XPU/oneCCL compatibility layer
+//     //
+//     // On XPU, streams are opaque pointers to SYCL queues.
+//     // These aliases map CUDA names to XPU equivalents for Rust code compatibility.
+//     pub type cudaError_t = inner::xpuError_t;
+//     pub type cudaStream_t = inner::xpuStream_t;
+//     pub type CUstream_st = inner::xpuStreamOpaque;
+
+//     // Function aliases - map CUDA runtime functions to XPU equivalents
+//     pub use inner::xpuSetDevice as cudaSetDevice;
+//     pub use inner::xpuStreamSynchronize as cudaStreamSynchronize;
+// }
 
 #[cfg(test)]
 mod tests {

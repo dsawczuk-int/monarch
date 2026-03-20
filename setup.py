@@ -122,11 +122,30 @@ def get_rocm_home() -> Optional[str]:
 
     return None
 
+def get_oneapi_home() -> Optional[str]:
+    """
+    Find oneAPI installation.
+
+    Returns:
+        Path to oneAPI installation or None if not found
+    """
+    # Check environment variable first
+    oneapi_home = os.environ.get("ONEAPI_ROOT") or os.environ.get("ONEAPI_HOME")
+    if oneapi_home and os.path.exists(oneapi_home):
+        return oneapi_home
+
+    # Check default oneAPI location
+    if os.path.exists("/opt/intel/oneapi"):
+        return "/opt/intel/oneapi"
+
+    return None
+
 
 # Build config detection
 torch_config = get_torch_config()
 cuda_home = get_cuda_home()
 rocm_home = get_rocm_home()
+oneapi_home = get_oneapi_home()
 use_tensor_engine = os.environ.get("USE_TENSOR_ENGINE", "1") == "1"
 
 if use_tensor_engine and not torch_config:
@@ -146,20 +165,25 @@ build_tensor_engine = use_tensor_engine and torch_config is not None
 
 # GPU platform selection: use MONARCH_RDMA_GPU_PLATFORM env var or auto-detect
 gpu_platform = os.environ.get("MONARCH_RDMA_GPU_PLATFORM", "").lower()
-if gpu_platform and gpu_platform not in ("cuda", "rocm"):
-    sys.exit(f"Invalid MONARCH_RDMA_GPU_PLATFORM={gpu_platform}. Use 'cuda' or 'rocm'")
+if gpu_platform and gpu_platform not in ("cuda", "rocm", "xpu"):
+    sys.exit(f"Invalid MONARCH_RDMA_GPU_PLATFORM={gpu_platform}. Use 'cuda', 'rocm', or 'xpu'")
 if gpu_platform == "rocm" and not rocm_home:
     sys.exit("MONARCH_RDMA_GPU_PLATFORM=rocm but ROCm not found")
 if gpu_platform == "cuda" and not cuda_home:
     sys.exit("MONARCH_RDMA_GPU_PLATFORM=cuda but CUDA not found")
-if not gpu_platform and build_tensor_engine and cuda_home and rocm_home:
-    sys.exit("Both CUDA and ROCm detected. Set MONARCH_RDMA_GPU_PLATFORM=cuda or =rocm")
+if gpu_platform == "xpu" and not oneapi_home:
+    sys.exit("MONARCH_RDMA_GPU_PLATFORM=xpu but XPU not found")
+if not gpu_platform and build_tensor_engine and sum([bool(cuda_home), bool(rocm_home), bool(oneapi_home)]) > 1:
+    sys.exit("Multiple GPU platforms detected. Set MONARCH_RDMA_GPU_PLATFORM=cuda, =rocm, or =xpu")
 
 build_cuda = build_tensor_engine and (
     gpu_platform == "cuda" or (not gpu_platform and cuda_home)
 )
 build_rocm = build_tensor_engine and (
     gpu_platform == "rocm" or (not gpu_platform and rocm_home)
+)
+build_xpu = build_tensor_engine and (
+    gpu_platform == "xpu" or (not gpu_platform and oneapi_home)
 )
 
 print("=" * 80)
@@ -170,6 +194,8 @@ if build_tensor_engine:
         print(f"  - CUDA: {cuda_home}")
     elif build_rocm:
         print(f"  - ROCm: {rocm_home}")
+    elif build_xpu:
+        print(f"  - XPU: {oneapi_home}")
     else:
         print("  - GPU: Not found (CPU-only)")
     print(f"  - C++11 ABI: {'enabled' if torch_config['cxx11_abi'] else 'disabled'}")
@@ -206,6 +232,8 @@ if build_cuda:
     env_vars["CUDA_HOME"] = cuda_home
 elif build_rocm:
     env_vars["ROCM_PATH"] = rocm_home
+elif build_xpu:
+    env_vars["ONEAPI_ROOT"] = oneapi_home
 
 os.environ.update(env_vars)
 

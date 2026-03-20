@@ -25,6 +25,7 @@ use pyo3_build_config as _;
 use which::which;
 
 pub mod rocm;
+pub mod oneapi;
 
 /// Python script to extract Python paths from sysconfig
 pub const PYTHON_PRINT_DIRS: &str = r"
@@ -416,62 +417,75 @@ pub fn setup_cpp_static_libs() -> CppStaticLibsConfig {
     config
 }
 
-/// Detect GPU compute platform (CUDA or ROCm)
+/// GPU compute platform enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuPlatform {
+    Cuda,
+    Rocm,
+    Xpu,
+}
+
+/// Detect GPU compute platform (CUDA or ROCm or XPU)
 ///
-/// Returns (is_rocm, compute_home_path)
+/// Returns (platform, compute_home_path)
 ///
 /// Detection order:
-/// 1. MONARCH_RDMA_GPU_PLATFORM environment variable ("cuda" or "rocm")
-/// 2. Auto-detect: try CUDA first, fall back to ROCm
-/// 3. If both found, prefer CUDA (user can override with env var)
-pub fn detect_gpu_platform() -> (bool, String) {
+/// 1. MONARCH_RDMA_GPU_PLATFORM environment variable ("cuda", "rocm", or "xpu")
+/// 2. Auto-detect: try CUDA first, then ROCm, then XPU
+/// 3. If multiple found, prefer CUDA (user can override with env var)
+pub fn detect_gpu_platform() -> (GpuPlatform, String) {
     // Check for explicit platform selection via env var
     if let Ok(platform) = env::var("MONARCH_RDMA_GPU_PLATFORM") {
         match platform.to_lowercase().as_str() {
+            "xpu" => {
+                let oneapi_home = oneapi::validate_oneapi_installation()
+                    .expect("MONARCH_RDMA_GPU_PLATFORM=xpu but XPU installation not found");
+                println!("cargo:warning=Using XPU from {} (explicit)", oneapi_home);
+                return (GpuPlatform::Xpu, oneapi_home);
+            }
             "rocm" => {
                 let rocm_home = rocm::validate_rocm_installation()
                     .expect("MONARCH_RDMA_GPU_PLATFORM=rocm but ROCm installation not found");
                 println!("cargo:warning=Using ROCm from {} (explicit)", rocm_home);
-                return (true, rocm_home);
+                return (GpuPlatform::Rocm, rocm_home);
             }
             "cuda" => {
                 let cuda_home = validate_cuda_installation()
                     .expect("MONARCH_RDMA_GPU_PLATFORM=cuda but CUDA installation not found");
                 println!("cargo:warning=Using CUDA from {} (explicit)", cuda_home);
-                return (false, cuda_home);
+                return (GpuPlatform::Cuda, cuda_home);
             }
             _ => panic!(
-                "Invalid MONARCH_RDMA_GPU_PLATFORM value: {}. Must be 'rocm' or 'cuda'",
+                "Invalid MONARCH_RDMA_GPU_PLATFORM value: {}. Must be 'rocm', 'cuda', or 'xpu'",
                 platform
             ),
         }
     }
 
-    // Auto-detect: try CUDA first, fall back to ROCm
+    // Auto-detect: try CUDA first, fall back to ROCm or XPU
     let cuda_result = validate_cuda_installation();
     let rocm_result = rocm::validate_rocm_installation();
+    let oneapi_result = oneapi::validate_oneapi_installation();
 
-    match (rocm_result.is_ok(), cuda_result.is_ok()) {
-        (true, false) => {
-            let rocm_home = rocm_result.unwrap();
-            println!("cargo:warning=Using ROCm from {}", rocm_home);
-            (true, rocm_home)
-        }
-        (false, true) => {
-            let cuda_home = cuda_result.unwrap();
-            println!("cargo:warning=Using CUDA from {}", cuda_home);
-            (false, cuda_home)
-        }
-        (true, true) => {
-            panic!(
-                "Both ROCm and CUDA detected. Set MONARCH_RDMA_GPU_PLATFORM=cuda or \
-                 MONARCH_RDMA_GPU_PLATFORM=rocm to select the platform."
-            );
-        }
-        (false, false) => {
-            panic!("Neither CUDA nor ROCm installation found");
-        }
+    // Print info if more than one platform is detected
+    let ok_count = [cuda_result.is_ok(), rocm_result.is_ok(), oneapi_result.is_ok()]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+    if ok_count > 1 {
+        println!("cargo:warning=Multiple GPU platforms detected. Set MONARCH_RDMA_GPU_PLATFORM to specify which one to use.");
     }
+    if ok_count == 0 {
+        panic!("Neither CUDA, ROCm, nor XPU installation found");
+    }
+
+    let (platform, home_path) = cuda_result
+        .map(|path| (GpuPlatform::Cuda, path))
+        .or_else(|_| rocm_result.map(|path| (GpuPlatform::Rocm, path)))
+        .or_else(|_| oneapi_result.map(|path| (GpuPlatform::Xpu, path)))
+        .expect("No GPU platform found");
+    
+    (platform, home_path)
 }
 
 /// Set rpath for Python library directory

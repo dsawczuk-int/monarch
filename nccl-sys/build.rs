@@ -8,7 +8,7 @@
 
 //! Build script for nccl-sys
 //!
-//! Supports both CUDA (NCCL) and ROCm (RCCL) backends.
+//! Supports CUDA (NCCL), ROCm (RCCL), and XPU (oneCCL) backends.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -20,8 +20,10 @@ fn main() {}
 fn main() {
     use std::env;
 
-    // Detect platform: ROCm or CUDA
-    let (is_rocm, compute_home) = build_utils::detect_gpu_platform();
+    // Detect platform: ROCm, CUDA or XPU
+    let (gpu_platform, compute_home) = build_utils::detect_gpu_platform();
+    let is_rocm = gpu_platform == build_utils::GpuPlatform::Rocm;
+    let is_xpu: bool = gpu_platform == build_utils::GpuPlatform::Xpu;
 
     // Get directories
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -42,17 +44,19 @@ fn main() {
         .expect("hipify failed");
         hip_dir
     } else {
-        // For CUDA: use original sources
+        // For CUDA and XPU: use original sources
         src_dir.clone()
     };
 
     // Setup rerun triggers
     println!("cargo:rerun-if-changed=src/bridge.h");
     println!("cargo:rerun-if-changed=src/bridge.cpp");
+    println!("cargo:rerun-if-changed=src/bridge_xpu.h");
+    println!("cargo:rerun-if-changed=src/bridge_xpu.cpp");
 
-    // Find the header and source files (hipified or original)
-    let header_file = find_header(&source_dir, is_rocm);
-    let cpp_file = find_cpp_source(&source_dir, is_rocm);
+    // Find the header and source files
+    let header_file = find_header(&source_dir, gpu_platform);
+    let cpp_file = find_cpp_source(&source_dir, gpu_platform);
 
     // Compile the bridge.cpp file
     let mut cc_builder = cc::Build::new();
@@ -60,8 +64,12 @@ fn main() {
         .cpp(true)
         .file(&cpp_file)
         .flag("-std=c++14")
-        .include(&source_dir)
-        .include(format!("{}/include", compute_home));
+        .include(&source_dir);
+    if is_xpu {
+        //cc_builder.include(format!("{}/include", compute_home))
+        // TODO: Do we need it?
+    } else {
+        cc_builder.include(format!("{}/include", compute_home));
 
     if is_rocm {
         cc_builder
@@ -144,6 +152,14 @@ fn main() {
             .allowlist_type("hipStream_t")
             .clang_arg(format!("-I{}/include", compute_home))
             .clang_arg("-D__HIP_PLATFORM_AMD__");
+    } else if is_xpu {
+        // TODO these should be LeveLZero or sycl names, remember to include proper header
+        // builder = builder
+        //     .allowlist_function("xpuSetDevice")
+        //     .allowlist_function("xpuStreamSynchronize")
+        //     .allowlist_type("xpuError_t")
+        //     .allowlist_type("xpuStream_t")
+        //     .allowlist_type("xpuStreamOpaque");
     } else {
         builder = builder
             .allowlist_function("cudaSetDevice")
@@ -183,13 +199,18 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
-    // We no longer link against nccl/rccl directly since we dlopen it
+    // We no longer link against nccl/rccl/oneccl directly since we dlopen it
     // But we do link against the compute runtime
     if is_rocm {
         // ROCm: Link dynamically to HIP runtime
         println!("cargo::rustc-link-lib=amdhip64");
         println!("cargo::rustc-link-search=native={}/lib", compute_home);
         println!("cargo::rustc-link-lib=dl");
+    } else if is_xpu {
+        // XPU: Only need dl for dlopen (oneCCL is loaded dynamically)
+        // TODO: probably will require also linking against levelzero or sycl
+        println!("cargo::rustc-link-lib=dl");
+        println!("cargo::rustc-link-search=native={}/ccl/latest/lib/", compute_home);
     } else {
         // CUDA: Link statically to CUDA runtime
         let cuda_lib_dir = build_utils::get_cuda_lib_dir();
@@ -209,11 +230,19 @@ fn main() {
         println!("cargo::rustc-cfg=use_rocm");
     }
     println!("cargo::rustc-check-cfg=cfg(use_rocm)");
+
+    // Emit cfg for XPU so Rust code can conditionally compile
+    if is_xpu {
+        println!("cargo::rustc-cfg=use_xpu");
+    }
+    println!("cargo::rustc-check-cfg=cfg(use_xpu)");
 }
 
-/// Find the main header file (bridge.h or bridge_hip.h)
-fn find_header(dir: &Path, is_rocm: bool) -> PathBuf {
-    let names = if is_rocm {
+/// Find the main header file
+fn find_header(dir: &Path, gpu_platform: build_utils::GpuPlatform) -> PathBuf {
+    let names = if gpu_platform == build_utils::GpuPlatform::Xpu {
+        vec!["bridge_xpu.h"]
+    } else if gpu_platform == build_utils::GpuPlatform::Rocm {
         vec!["bridge_hip.h", "bridge.h"]
     } else {
         vec!["bridge.h"]
@@ -229,8 +258,10 @@ fn find_header(dir: &Path, is_rocm: bool) -> PathBuf {
 }
 
 /// Find C++ source file
-fn find_cpp_source(dir: &Path, is_rocm: bool) -> PathBuf {
-    let names = if is_rocm {
+fn find_cpp_source(dir: &Path, gpu_platform: build_utils::GpuPlatform) -> PathBuf {
+    let names = if gpu_platform == build_utils::GpuPlatform::Xpu {
+        vec!["bridge_xpu.cpp"]
+    } else if gpu_platform == build_utils::GpuPlatform::Rocm {
         vec!["bridge_hip.cpp", "bridge.cpp"]
     } else {
         vec!["bridge.cpp"]
