@@ -46,25 +46,25 @@ mod extern_types {
     }
 }
 // TODO CHECK WHERE IT IS NEEDED
-// #[cfg(use_xpu)]
-// mod extern_types {
-//     use super::inner::ncclComm;
-//     use super::inner::xpuStreamOpaque;
-//     use super::*;
+#[cfg(use_xpu)]
+mod extern_types {
+    use super::inner::ncclComm;
+    use super::inner::xpuStreamOpaque;
+    use super::*;
 
-//     /// SAFETY: bindings
-//     /// Note: XPU uses xpuStreamOpaque as the opaque type behind xpuStream_t pointer
-//     unsafe impl ExternType for xpuStreamOpaque {
-//         type Id = type_id!("xpuStreamOpaque");
-//         type Kind = cxx::kind::Opaque;
-//     }
+    /// SAFETY: bindings
+    /// Note: XPU uses xpuStreamOpaque as the opaque type behind xpuStream_t pointer
+    unsafe impl ExternType for xpuStreamOpaque {
+        type Id = type_id!("xpuStreamOpaque");
+        type Kind = cxx::kind::Opaque;
+    }
 
-//     /// SAFETY: bindings
-//     unsafe impl ExternType for ncclComm {
-//         type Id = type_id!("ncclComm");
-//         type Kind = cxx::kind::Opaque;
-//     }
-// }
+    /// SAFETY: bindings
+    unsafe impl ExternType for ncclComm {
+        type Id = type_id!("ncclComm");
+        type Kind = cxx::kind::Opaque;
+    }
+}
 
 // When building with cargo, this is actually the lib.rs file for a crate.
 // Include the generated bindings.rs and suppress lints.
@@ -157,27 +157,27 @@ mod rocm_compat {
 }
 
 // TODO CHECK WHERE IT IS NEEDED
-// // For XPU: export compatibility aliases that map CUDA names to XPU equivalents
-// #[cfg(use_xpu)]
-// pub use self::xpu_compat::*;
+// For XPU: export compatibility aliases that map CUDA names to XPU equivalents
+#[cfg(use_xpu)]
+pub use self::xpu_compat::*;
 
-// #[cfg(use_xpu)]
-// #[allow(non_camel_case_types)]
-// mod xpu_compat {
-//     use super::inner;
+#[cfg(use_xpu)]
+#[allow(non_camel_case_types)]
+mod xpu_compat {
+    use super::inner;
 
-//     // XPU/oneCCL compatibility layer
-//     //
-//     // On XPU, streams are opaque pointers to SYCL queues.
-//     // These aliases map CUDA names to XPU equivalents for Rust code compatibility.
-//     pub type cudaError_t = inner::xpuError_t;
-//     pub type cudaStream_t = inner::xpuStream_t;
-//     pub type CUstream_st = inner::xpuStreamOpaque;
+    // XPU/oneCCL compatibility layer
+    //
+    // On XPU, streams are opaque pointers to SYCL queues.
+    // These aliases map CUDA names to XPU equivalents for Rust code compatibility.
+    pub type cudaError_t = inner::xpuError_t;
+    pub type cudaStream_t = inner::xpuStream_t;
+    pub type CUstream_st = inner::xpuStreamOpaque;
 
-//     // Function aliases - map CUDA runtime functions to XPU equivalents
-//     pub use inner::xpuSetDevice as cudaSetDevice;
-//     pub use inner::xpuStreamSynchronize as cudaStreamSynchronize;
-// }
+    // Function aliases - map CUDA runtime functions to XPU equivalents
+    pub use inner::xpuSetDevice as cudaSetDevice;
+    pub use inner::xpuStreamSynchronize as cudaStreamSynchronize;
+}
 
 #[cfg(test)]
 mod tests {

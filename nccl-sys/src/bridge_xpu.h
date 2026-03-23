@@ -24,18 +24,18 @@ extern "C" {
 // XPU stream/device runtime types
 // On XPU, streams are opaque pointers to SYCL queues
 // TODO CHECK IF THE FOLLOWING FUNCTION ARE NEEDED AND WHERE
-// struct xpuStreamOpaque;
-// typedef struct xpuStreamOpaque* xpuStream_t;
+struct xpuStreamOpaque;
+typedef struct xpuStreamOpaque* xpuStream_t;
 
-// typedef enum {
-//   xpuSuccess = 0,
-//   xpuErrorInvalidValue = 1,
-//   xpuErrorNotReady = 2
-// } xpuError_t;
+typedef enum {
+  xpuSuccess = 0,
+  xpuErrorInvalidValue = 1,
+  xpuErrorNotReady = 2
+} xpuError_t;
 
-// // XPU runtime-like functions (analogous to cudaSetDevice/cudaStreamSynchronize)
-// xpuError_t xpuSetDevice(int device);
-// xpuError_t xpuStreamSynchronize(xpuStream_t stream);
+// XPU runtime-like functions (analogous to cudaSetDevice/cudaStreamSynchronize)
+xpuError_t xpuSetDevice(int device);
+xpuError_t xpuStreamSynchronize(xpuStream_t stream);
 
 // // Opaque handle to communicator
 typedef struct ncclComm* ncclComm_t;

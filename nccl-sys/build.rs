@@ -70,7 +70,7 @@ fn main() {
         // TODO: Do we need it?
     } else {
         cc_builder.include(format!("{}/include", compute_home));
-
+    }
     if is_rocm {
         cc_builder
             .define("__HIP_PLATFORM_AMD__", "1")
@@ -154,12 +154,12 @@ fn main() {
             .clang_arg("-D__HIP_PLATFORM_AMD__");
     } else if is_xpu {
         // TODO these should be LeveLZero or sycl names, remember to include proper header
-        // builder = builder
-        //     .allowlist_function("xpuSetDevice")
-        //     .allowlist_function("xpuStreamSynchronize")
-        //     .allowlist_type("xpuError_t")
-        //     .allowlist_type("xpuStream_t")
-        //     .allowlist_type("xpuStreamOpaque");
+        builder = builder
+            .allowlist_function("xpuSetDevice")
+            .allowlist_function("xpuStreamSynchronize")
+            .allowlist_type("xpuError_t")
+            .allowlist_type("xpuStream_t")
+            .allowlist_type("xpuStreamOpaque");
     } else {
         builder = builder
             .allowlist_function("cudaSetDevice")

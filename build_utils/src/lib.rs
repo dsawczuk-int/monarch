@@ -469,9 +469,10 @@ pub fn detect_gpu_platform() -> (GpuPlatform, String) {
 
     // Print info if more than one platform is detected
     let ok_count = [cuda_result.is_ok(), rocm_result.is_ok(), oneapi_result.is_ok()]
-        .iter()
-        .filter(|&&x| x)
+        .into_iter()
+        .filter(|x| *x)
         .count();
+    println!("cargo:warning=Detected GPU platforms: count:{} oneapi:{}", ok_count, oneapi_result.is_ok());
     if ok_count > 1 {
         println!("cargo:warning=Multiple GPU platforms detected. Set MONARCH_RDMA_GPU_PLATFORM to specify which one to use.");
     }

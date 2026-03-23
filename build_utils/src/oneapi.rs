@@ -19,13 +19,15 @@ use crate::get_env_var_with_rerun;
 /// Validate oneAPI installation exists and return oneAPI home path
 ///
 /// Checks for oneAPI installation through:
-/// 1. ONEAPI_PATH environment variable
+/// 1. ONEAPI_ROOT environment variable
 /// 2. Default location /opt/intel/oneapi
 /// 3. Finding dpcpp in PATH and resolving symlinks
 pub fn validate_oneapi_installation() -> Result<String, BuildError> {
-    // Try ONEAPI_PATH environment variable first
-    if let Ok(oneapi_path) = get_env_var_with_rerun("ONEAPI_PATH") {
-        if Path::new(&oneapi_path).join("/compiler/latest/bin/dpcpp").exists() {
+    // Try ONEAPI_ROOT environment variable first
+    if let Ok(oneapi_path) = get_env_var_with_rerun("ONEAPI_ROOT") {
+        println!("cargo:warning=Checking oneAPI installation at ONEAPI_ROOT: {}", oneapi_path);
+        if Path::new(&oneapi_path).exists() { // TODO: check if compiler exists?? .join("/compiler/latest/bin/dpcpp")
+            println!("cargo:warning=Found oneAPI installation at ONEAPI_ROOT: {}", oneapi_path);
             return Ok(oneapi_path);
         }
     }
@@ -57,7 +59,7 @@ pub fn validate_oneapi_installation() -> Result<String, BuildError> {
 /// Get oneAPI version from installation
 ///
 /// Returns (major, minor) version tuple.
-pub fn get_oneapi_version(oneapi_home: &str) -> Result<(u32, u32), BuildError> {
+pub fn get_oneapi_version(_oneapi_home: &str) -> Result<(u32, u32), BuildError> {
     return Ok((0, 0)); // TODO: implement oneAPI version detection
 
     // let version_file = Path::new(oneapi_home).join(".info/version");
